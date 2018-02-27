@@ -1,0 +1,333 @@
+# 1) Importing libraries (packages) and the dataset. Then selecting just the variables needed:
+{
+
+# Packages needed for the script:
+
+library(tidyverse) # for data importing, manipulation and visualization
+library(e1071) # for the Naive Bayes algorithm
+library(rworldmap) # For plotting the world map
+library(scales) # For data visualization
+
+  ## if you don't have these packages installed, just run install.packages("package name")
+
+# Importing dataset and associating it with the name "dataframe":
+
+dataset <- read_csv("C:/Users/lopes/Desktop/Data Mining with R/globalterrorismdb_0617dist.csv")
+dataset$imonth <- as.character(dataset$imonth)
+
+# Selecting just the variables we need:
+
+dataset <- dataset %>% dplyr::select(
+    
+    # Time
+    iyear,   # Year
+    imonth,  # Month
+    
+    # Geospatial
+    
+    # Numerical
+    nkill,     # Death toll
+    
+    # Categorical
+    city,            # City
+    country_txt,     # Desc country
+    region_txt,      # Desc region  
+    attacktype1_txt, # Desc attack type
+    weaptype1_txt,   # Desc weapon type
+    targtype1_txt,   # Desc target type
+    propextent,      # Amount of damage done          
+    
+    # Text
+    gname  # Name of organization 
+)
+  
+}
+
+# 2) Generating plots to visualize the data. In the respective order: by time, by location and by type of attack:
+
+{
+
+# 2.1) Visualizing the data from a historical point of view:
+  
+# Worldwide kills grouped by year
+
+kills_year <- dataset %>%
+  filter(nkill > 0) %>%
+  group_by(iyear) %>%
+  summarize(n = sum(nkill)) %>%
+  ungroup()
+
+colnames(kills_year) <- c("Year", "Kills")
+
+kills_year %>%
+  ggplot(aes(x = Year, y = Kills))+
+  geom_line()+ geom_point()+ theme_bw() +
+  labs(title = "Worldwide kills. 1970 - 2016")
+
+# Kills grouped by year and Region
+
+kills_year_region <- dataset %>%
+  filter(nkill > 0) %>%
+  group_by(iyear, region_txt) %>%
+  summarize(nkills = sum(nkill)) %>%
+  ungroup()
+
+colnames(kills_year_region) <- c("Year", "Region", "Kills")
+
+kills_year_region %>%
+  ggplot(aes(x = Year, y = Kills, colour = Region)) +       
+  geom_line() + geom_point() + theme_bw()+
+  labs(title = "Worldwide kills grouped by region. 1970 - 2016")
+
+# 2.2) Visualizing the data from a location point of view:
+
+# Number of attacks by region:
+
+dataset %>%
+  group_by(region_txt) %>%
+  count(sort = T) %>%
+  ggplot()+
+  geom_bar(aes(x = reorder(region_txt, n), y = n), stat="identity")+
+  coord_flip()+
+  labs(title = "Number of attacks by region. 1970 - 2016", x = "Number of attacks", y = "Country")
+
+
+# Top 15 Countries with highest number of attacks
+
+dataset %>%
+  group_by(country_txt) %>%
+  count(sort = T) %>%
+  head(15)%>%
+  ggplot()+
+  geom_bar(aes(x = reorder(country_txt, n), y = n), stat="identity")+
+  coord_flip()+
+  labs(title = "Top 15 Countries with highest number of attacks. 1970 - 2016", x = "Number of attacks", y = "Country")
+
+# Top 10 Countries in Europe with highest number of attacks
+
+dataset %>%
+  filter(region_txt == "Western Europe" | region_txt == "Eastern Europe") %>%
+  group_by(country_txt) %>%
+  count(sort = T) %>%
+  head(10)%>%
+  ggplot()+
+  geom_bar(aes(x = reorder(country_txt, n), y = n), stat="identity")+
+  coord_flip()+
+  labs(title = "Top 10 Countries in Europe with highest number of attacks. 1970 - 2016", x = "Number of attacks", y = "Country")
+
+# World map attacks
+ctry <- dataset %>%
+  group_by(country_txt) %>%
+  filter(nkill > 0) %>%
+  filter(iyear > 1999) %>%
+  summarize(value=n()) %>%
+  mutate(country=country_txt) %>%
+  select(country, value)
+
+tmp <- joinCountryData2Map(ctry, joinCode="NAME", nameJoinColumn="country")
+
+mapCountryData(tmp, 
+               nameColumnToPlot="value", 
+               mapTitle="Worldwide attacks with kills. 2000 - 2016", 
+               addLegend="FALSE",
+               borderCol="black",
+               oceanCol="white", 
+               missingCountryCol="grey")
+
+# 2.3) Visualizing the data from the type of attack point of view:
+
+# Number of attacks by type of weapon:
+
+dataset %>%
+  group_by(region_txt, weaptype1_txt)%>%
+  summarize(Count = n())%>%
+  mutate(LogCount=log(Count, exp(1)), 
+         Label= as.character(ifelse(Count> 1000, paste(round(Count/1000), "K", sep=""), Count)),
+         WeaponType=weaptype1_txt,
+         Region=region_txt)%>%
+  ggplot(aes(x=reorder(Region, -Count), y=reorder(WeaponType, Count), fill=LogCount, label=Label)) + 
+  geom_tile( colour="white", size=0.1 ) +
+  geom_text(size=3)+
+  ggtitle("Number of attacks by type of weapon") +
+  coord_fixed() +  
+  guides(fill=FALSE) + 
+  labs(x="", y="") +
+  scale_y_discrete(expand=c(0,0)) +
+  scale_x_discrete(expand=c(0,0)) + 
+  scale_fill_continuous(low="white", high="darkred", na.value="black")+
+  theme(plot.title = element_text(colour="grey30",hjust=0,size=10,face="plain"),
+        axis.text.x = element_text(angle = 90, hjust=1),
+        axis.ticks=element_line(size=0.4, colour="grey70"),            
+        plot.background=element_blank(),
+        panel.border=element_blank(), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.text=element_text(colour="grey30",size=8,face="plain"),
+        legend.title=element_text(colour="grey30", size=8, face="plain"))
+
+# Number of attacks by target
+
+dataset %>%
+  group_by(region_txt, targtype1_txt) %>%
+  summarize(Count=n()) %>%
+  mutate(LogCount=log(Count, exp(1)), 
+                TargetType=targtype1_txt, 
+                Region=region_txt, 
+                Label= as.character(ifelse(Count> 1000, paste(round(Count/1000), "K", sep=""), Count))) %>%
+  ggplot(aes(x=reorder(Region, -Count), y=reorder(TargetType, Count), fill=LogCount, label=Label)) + 
+  geom_tile( colour="white", size=0.1 ) +
+  geom_text(size=2.5) +
+  ggtitle("Number of attacks by target") +
+  guides(fill=FALSE) + 
+  coord_fixed() +    
+  labs(x="", y="") +
+  scale_y_discrete(expand=c(0,0)) +
+  scale_x_discrete(expand=c(0,0)) + 
+  scale_fill_continuous(low="white", high="darkred", na.value="black") +
+  theme(aspect.ratio= 1/1.85,
+        plot.title = element_text(colour="grey30",hjust=0,size=10,face="plain"),
+        axis.text.x = element_text(angle = 90, hjust=1),
+        axis.ticks = element_line(size=0.4, colour="grey70"),            
+        plot.background = element_blank(),
+        panel.border=element_blank(), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.text = element_text(colour="grey30",size=8,face="plain"),
+        legend.title = element_text(colour="grey30",size=8,face="plain"))
+    
+# Number of attacks by attack type
+
+dataset %>%
+  group_by(region_txt, attacktype1_txt) %>%
+  summarize(Count=n()) %>%
+  mutate(LogCount=log(Count, exp(1)), 
+                AttackType=attacktype1_txt, 
+                Region=region_txt,
+                Label= as.character(ifelse(Count> 1000, paste(round(Count/1000), "K", sep=""), Count))) %>%           
+  ggplot(aes(x=reorder(Region, -Count), y=reorder(AttackType, Count), fill=LogCount, label=Label)) + 
+  geom_tile( colour="white", size=0.1 ) +
+  geom_text(size=2.75) + 
+  ggtitle("Number of attacks by attack type") +
+  guides(fill=FALSE) + 
+  coord_fixed() +    
+  labs(x="", y="") +
+  scale_y_discrete(expand=c(0,0)) +
+  scale_x_discrete(expand=c(0,0)) + 
+  scale_fill_continuous(low="white", high="darkred", na.value="black") +
+  theme(plot.title=element_text(colour="grey30",hjust=0,size=10,face="plain"),
+        axis.text.x = element_text(angle = 90, hjust=1),
+        axis.ticks=element_line(size=0.4, colour="grey70"),            
+        plot.background=element_blank(),
+        panel.border=element_blank(), 
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        legend.text = element_text(colour="grey30",size=8,face="plain"),
+        legend.title = element_text(colour="grey30",size=8,face="plain"))
+
+}
+
+# 3) Creating predictive models with Naive Bayes (to predict country, type of attack and month)
+
+{
+#### APPLYING THE NAIVE BAYES MODEL FOR CLASSIFICATION (USING ONLY EUROPEAN COUNTRIES)
+
+# Getting attacks from Europe with kills
+training_data_europe <- dataset %>%
+    filter(nkill > 0) %>%
+    filter(region_txt == "Western Europe" | region_txt == "Eastern Europe") %>%
+    select(imonth, country_txt, attacktype1_txt)
+    
+
+  # Creating the models
+model_country_eur <- naiveBayes(country_txt ~., data = training_data_europe, laplace = T) # to predic the country
+model_attacktype_eur <- naiveBayes(attacktype1_txt ~., data = training_data_europe, laplace = T) # to predic the type of attack
+model_month_eur <- naiveBayes(imonth ~., data = training_data_europe, laplace = T) # to predic the month
+
+}
+
+# 4) Evaluating the models created:
+
+{
+
+# Checking the model and its probabilities
+model_country_eur
+model_attacktype_eur
+model_month_eur
+
+# Setting the variable we want to predict
+unknown_country <- data.frame(attacktype1_txt = "Armed Assault", imonth = "3")
+unknown_attacktype <- data.frame(country_txt = "France", month = "7")
+unknown_month <- data.frame(country_txt = "France", attacktype1_txt = "Armed Assault")
+
+# Making the predicition. The result is the probabilites for each class
+  ## In this case, the countries (in West Europe) most likely to suffer an Armed Assault in March:
+predict(model_country_eur, unknown_country, type = "raw")
+predict(model_attacktype_eur, unknown_attacktype, type = "raw")
+predict(model_month_eur, unknown_month, type="raw")
+
+}
+
+# 5) Executing the algorithms and visualizing the results of the predictions:
+
+{
+
+  # Transforming the results into a dataframe
+
+country_predictions <- predict(model_country_eur, unknown_country, type = "raw")
+probability <- t(country_predictions)
+country_predictions <- data.frame(country = row.names(probability), probability, row.names = NULL)
+country_predictions <- as.tibble(country_predictions)
+
+
+attacktype_predictions <- predict(model_attacktype_eur, unknown_attacktype, type = "raw")
+probability <- t(attacktype_predictions)
+attacktype_predictions <- data.frame(Type_of_attack = row.names(probability), probability, row.names = NULL)
+attacktype_predictions <- as.tibble(attacktype_predictions)
+
+
+month_predictions <- predict(model_month_eur, unknown_month, type="raw")
+probability <- t(month_predictions)
+month_predictions <- data.frame(Month = row.names(probability), probability, row.names = NULL)
+month_predictions <- as.tibble(month_predictions)
+
+# Visualizing the predictions in a plot:
+
+# 1) 10 European countries most likely to have an Armed Assault in the month of March:
+country_predictions %>%
+  top_n(n = 10, wt = probability)%>%
+  ggplot()+
+  geom_bar(aes(x = reorder(country, probability), y = probability), stat="identity", fill = "#2899b6")+
+  coord_flip()+
+  scale_y_continuous(labels = percent_format())+
+  geom_text(aes(x = country, y = probability, label = percent(probability)))+
+  labs(title = "10 European countries most likely to occur an Armed Assault in the month of March",
+       x = "", y = "Probability",
+       caption = "Prediction made from Bayesian conditional probability, considering attacks by Month, Country, and Type of Attack ")
+
+# 2) Type of attack most likely to occur in France in the month of July:
+attacktype_predictions %>%
+  ggplot()+
+  geom_bar(aes(x = reorder(Type_of_attack, probability), y = probability), stat="identity", fill = "#2899b6")+
+  coord_flip()+
+  scale_y_continuous(labels = percent_format())+
+  geom_text(aes(x = Type_of_attack, y = probability, label = percent(probability)))+
+  labs(title = "Type of attack most likely to happen in France in the month of July",
+       x = "", y = "Probability",
+       caption = "Prediction made from Bayesian conditional probability, considering attacks by Month, Country, and Type of Attack ")
+
+# 3) Months most likely to occur an Armed Assault in France
+
+month_predictions$Month <- recode(month_predictions$Month, '1'="January", '2'='February', '3'='March', '4'='April', '5'='May',
+                                  '6'='June', '7'='July', '8'='August', '9'='September', '10'='October', '11'='November', '12'='December')
+
+month_predictions %>%
+  ggplot()+
+  geom_bar(aes(x = reorder(Month, probability), y = probability), stat="identity", fill = "#2899b6")+
+  coord_flip()+
+  scale_y_continuous(labels = percent_format())+
+  geom_text(aes(x = Month, y = probability, label = percent(probability)))+
+  labs(title = "Months most likely to occur an Armed Assault in France",
+       x = "", y = "Probability",
+       caption = "Prediction made from Bayesian conditional probability, considering attacks by Month, Country, and Type of Attack ")
+
+}
